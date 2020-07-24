@@ -18,6 +18,7 @@ from bigquery import BigQueryHandler, BigQueryError
 
 
 def register_temperature(request):
+    execution_id = request.headers.get('Function-Execution-Id')
     channel_secret = os.environ.get('LINE_CHANNEL_SECRET')
     channel_access_token = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 
@@ -43,11 +44,13 @@ def register_temperature(request):
         if not isinstance(event.message, TextMessage):
             continue
 
-        handle_event(event, channel_access_token, bot_api)
+        handle_event(event, channel_access_token, bot_api, execution_id)
     return jsonify({'message': 'ok'})
 
 
-def handle_event(event, token, bot_api):
+def handle_event(event, token, bot_api, execution_id):
+    replier = MessageReplier(bot_api, event.reply_token)
+    # fetch user id & user name
     user_id, user_name = get_user_info(event, token)
     # message
     message = event.message.text
@@ -57,11 +60,8 @@ def handle_event(event, token, bot_api):
         body_temp = validator.parse_and_validate(message)
     except ValueError as e:
         # validation error
-        bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=str(e))
-        )
-        return
+        replier.reply(str(e))
+        return abort(405)
 
     # register to DB
     bq = BigQueryHandler()
@@ -75,21 +75,17 @@ def handle_event(event, token, bot_api):
     try:
         result = bq.insert(data)
         # post process
-        reply_by_result(result, event.reply_token, bot_api)
+        reply_by_result(result, replier)
     except BigQueryError as e:
-        bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text='登録中にエラーが発生しました。運営まで一報ください。エラーコード:E001')
-        )
+        replier.reply_with_error(
+            '登録中にエラーが発生しました。運営まで一報ください。', 'E001', execution_id)
         logging.error(str(e))
         logging.info(traceback.format_exc())
     except Exception as e:
+        replier.reply_with_error(
+            '登録中にエラーが発生しました。運営まで一報ください。', 'E002', execution_id)
         logging.error(str(e))
         logging.info(traceback.format_exc())
-        bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text='登録中にエラーが発生しました。運営まで一報ください。エラーコード:E002')
-        )
 
 
 def get_user_info(event, token):
@@ -104,23 +100,30 @@ def get_user_info(event, token):
     return user_id, user_name
 
 
-def reply_by_result(result, reply_token, bot_api):
+def reply_by_result(result, replier):
     res_user = result['user_insertion_result']
     res_temp = result['temperature_insertion_result']
 
     if res_user['created']:
-        bot_api.reply_message(
-            reply_token,
-            TextSendMessage(
-                text=f"{res_user['user_data']['name']}さん、こんにちは。初回の体温を登録しました。")
-        )
+        replier.reply(f"{res_user['user_data']['name']}さん、こんにちは。初回の体温を登録しました。")
     elif res_temp['duplicates']:
-        bot_api.reply_message(
-            reply_token,
-            TextSendMessage(text='本日分の体温記録を更新しました。')
-        )
+        replier.reply('本日分の体温記録を更新しました。')
     else:
-        bot_api.reply_message(
-            reply_token,
-            TextSendMessage(text='本日分の体温を記録しました。')
+        replier.reply('本日分の体温を記録しました。')
+
+
+class MessageReplier():
+    def __init__(self, bot_api, reply_token):
+        self.bot_api = bot_api
+        self.reply_token = reply_token
+
+    def reply(self, message):
+        self.bot_api.reply_message(
+            self.reply_token,
+            TextSendMessage(text=message)
         )
+
+    def reply_with_error(self, message, error_code, execution_id):
+        message += f'\r\nエラーコード: {error_code}'
+        message += f'\r\n実行ID: {execution_id}'
+        self.reply(message)
