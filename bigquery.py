@@ -32,18 +32,19 @@ class BigQueryHandler():
         }
 
     def _insert_user_if_not_exists(self, user_id, user_name):
-        # table = self.dataset.table('user')
         table = self.bq.get_table(
             f'{self.project_id}.{self.dataset_name}.user')
 
         # check if the user_id already exists
         q = (
-            f'SELECT id FROM {self.project_id}.{self.dataset_name}.user WHERE id = "{user_id}"'
+            f'SELECT id FROM {self.project_id}.{self.dataset_name}.user '
+            f'WHERE id = "{user_id}"'
         )
         rows = self.bq.query(q).result()
         if rows.total_rows > 0:
             # already exists
-            return {'created': False, 'user_data': rows[0]}
+            df = rows.to_dataframe(self.bq)
+            return {'created': False, 'user_data': df.iloc[0, :].to_dict()}
 
         # insert new user
         data = {'name': user_name, 'id': user_id,
@@ -52,7 +53,6 @@ class BigQueryHandler():
         return {'created': True, 'user_data': data}
 
     def _insert_temperature(self, datetime, user_id, body_temp):
-        # table = self.dataset.table('temperature')
         table = self.bq.get_table(
             f'{self.project_id}.{self.dataset_name}.temperature')
         datetime_str = datetime.strftime('%Y-%m-%dT%H:%M:%S')
@@ -60,17 +60,22 @@ class BigQueryHandler():
                 'user_id': user_id, 'temperature': body_temp}
         self._insert_to_bq(table, data)
 
-        return {'duplicates': False, 'body_temp_data': data}
         # check duplicates on the same date
-        # q = (
-        #     f'SELECT user_id FROM {self.project_id}.{self.dataset_name}.temperature WHERE datetime = {datetime}'
-        # )
-        # rows = self.bq.query(q).result()
-        # if len(rows) > 1:
-        #     # duplicates
-        #     return {'duplicates': True, 'body_temp_data': data}
-        # else:
-        #     return {'duplicates': False, 'body_temp_data': data}
+        q = (
+            f'WITH converted_date AS ('
+            f'  SELECT'
+            f'    DATE(TIMESTAMP(datetime), "Asia/Tokyo") as register_date,'
+            f'    CURRENT_DATE("Asia/Tokyo") as today,'
+            f'  FROM {self.project_id}.{self.dataset_name}.temperature'
+            f')'
+            f'SELECT * FROM converted_date WHERE register_date=today'
+        )
+        rows = self.bq.query(q).result()
+        if rows.total_rows > 0:
+            # duplicates
+            return {'duplicates': True, 'body_temp_data': data}
+        else:
+            return {'duplicates': False, 'body_temp_data': data}
 
     def _insert_to_bq(self, table, data):
         errors = self.bq.insert_rows(table, [data])
