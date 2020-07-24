@@ -81,11 +81,13 @@ def handle_event(event, token, bot_api, execution_id):
             '登録中にエラーが発生しました。運営まで一報ください。', 'E001', execution_id)
         logging.error(str(e))
         logging.info(traceback.format_exc())
+        return abort(500)
     except Exception as e:
         replier.reply_with_error(
             '登録中にエラーが発生しました。運営まで一報ください。', 'E002', execution_id)
         logging.error(str(e))
         logging.info(traceback.format_exc())
+        return abort(500)
 
 
 def get_user_info(event, token):
