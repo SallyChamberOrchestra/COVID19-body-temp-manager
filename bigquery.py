@@ -1,4 +1,5 @@
 import json
+import logging
 import hashlib
 import os
 from google.cloud import bigquery
@@ -37,13 +38,16 @@ class BigQueryHandler():
 
         # check if the user_id already exists
         q = (
-            f'SELECT id FROM {self.project_id}.{self.dataset_name}.user '
+            f'SELECT id, name, anonymized_name FROM {self.project_id}.{self.dataset_name}.user '
             f'WHERE id = "{user_id}"'
         )
         rows = self.bq.query(q).result()
         if rows.total_rows > 0:
             # already exists
             df = rows.to_dataframe(self.bq)
+            logging.info(df)
+            logging.info(df.to_dict())
+            logging.info(df.iloc[0, :].to_dict())
             return {'created': False, 'user_data': df.iloc[0, :].to_dict()}
 
         # insert new user

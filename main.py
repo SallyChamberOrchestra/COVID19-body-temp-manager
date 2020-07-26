@@ -14,7 +14,9 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 from validator import BodyTemperatureValidator
-from bigquery import BigQueryHandler, BigQueryError
+from bigquery import BigQueryHandler, BigQueryError, create_anonymized_name
+
+DASHBOARD_URL = os.environ.get('DASHBOARD_URL')
 
 
 def register_temperature(request):
@@ -105,13 +107,23 @@ def get_user_info(event, token):
 def reply_by_result(result, replier):
     res_user = result['user_insertion_result']
     res_temp = result['temperature_insertion_result']
+    user_name = res_user['user_data']['name']
 
     if res_user['created']:
-        replier.reply(f"{res_user['user_data']['name']}さん、こんにちは。初回の体温を登録しました。")
+        msg = f"{user_name}さん、こんにちは。初回の体温を登録しました。\n"
     elif res_temp['duplicates']:
-        replier.reply('本日分の体温記録を更新しました。')
+        msg = '本日分の体温記録を更新しました。\n'
     else:
-        replier.reply('本日分の体温を記録しました。')
+        msg = '本日分の体温を記録しました。\n'
+    msg += f'{user_name}さんの体温推移：{create_url(user_name)}'
+
+    replier.reply(msg)
+
+
+def create_url(name):
+    id_ = create_anonymized_name(name)
+    url = DASHBOARD_URL + f'?____=14&id={id_}#hide_parameters=id'
+    return url
 
 
 class MessageReplier():
