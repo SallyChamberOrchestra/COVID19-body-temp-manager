@@ -122,7 +122,7 @@ def reply_by_result(result, replier):
 
 def create_url(name):
     id_ = create_anonymized_name(name)
-    url = DASHBOARD_URL + f'?____=14&id={id_}#hide_parameters=id'
+    url = DASHBOARD_URL + f'?____=past14days&id={id_}#hide_parameters=id'
     return url
 
 
